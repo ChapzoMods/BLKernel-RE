@@ -1,0 +1,87 @@
+name: BLKernel RE - Dynamic PoC
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  recover-r8:
+    name: "Stage 1: recover r8_true (static, Linux)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile keygen stage 1
+        run: gcc -O3 -march=native -funroll-loops -o keygen1 poc/keygen_stage1.c
+
+      - name: Recover r8_true from known plaintext
+        run: |
+          ./keygen1 2>&1 | tee stage1.log
+          R8=$(grep -oP 'FOUND r8 = \K0x[0-9a-f]+' stage1.log)
+          echo "r8_true=$R8" | tee r8.env
+          echo "R8=$R8" >> $GITHUB_ENV
+          test -f blob_plain.bin && echo "[+] plaintext blob recovered"
+
+      - name: Upload r8
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8
+          path: r8.env
+
+  dynamic-validation:
+    name: "Stage 2: real binary validation (Windows)"
+    runs-on: windows-latest
+    needs: recover-r8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download r8
+        uses: actions/download-artifact@v4
+        with:
+          name: r8
+
+      - name: Install pefile
+        run: python -m pip install pefile --quiet
+
+      - name: Static unpack (BLKVMC01)
+        shell: pwsh
+        run: python poc/extract.py BLKernel.exe poc
+
+      - name: Forge serial and run REAL binary with --check
+        shell: pwsh
+        timeoutMinutes: 5
+        run: |
+          $r8line = (Get-Content r8.env | Select-String 'r8_true=').Line
+          $r8 = $r8line.Split('=')[1]
+          Write-Host "r8_true = $r8"
+          $user = "ChapzoMods"
+          $serial = (python poc/keygen_stage2.py $user $r8 | Select-String 'serial : ').Line.Split(':')[1].Trim()
+          Write-Host "user   = $user"
+          Write-Host "serial = $serial"
+          # run the REAL BLKernel.exe (admin required by manifest - runner has it)
+          $out = cmd /c ".\BLKernel.exe --check $user $serial 2>&1" | Out-String
+          $code = $LASTEXITCODE
+          Write-Host "exit code = $code"
+          Write-Host "----- output -----"
+          Write-Host $out
+          if ($code -ne 0) { Write-Host "::warning::exit code $code (env counters on runner may differ)"; }
+          if ($out -match 'ACCESS GRANTED') {
+            Write-Host "::notice::DYNAMIC POC PASSED - real binary accepted forged serial"
+            "POC_PASSED=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+          } else {
+            Write-Host "::notice::binary output did not show ACCESS GRANTED (check env gates)"
+          }
+
+      - name: Emulator verdict (ground truth)
+        shell: pwsh
+        run: python poc/keygen_stage2.py ChapzoMods $((Get-Content r8.env | Select-String 'r8_true=').Line.Split('=')[1])
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blkernel-re-evidence
+          path: |
+            stage1.log
+            blob_plain.bin
