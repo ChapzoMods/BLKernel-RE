@@ -10,36 +10,56 @@ jobs:
     name: "Stage 1: static unpack + recover r8_true (Linux)"
     runs-on: ubuntu-latest
     steps:
+      - name: Environment probe
+        run: |
+          set -x
+          whoami; uname -a; python3 --version; gcc --version | head -1
+          pip3 --version || true
+
       - uses: actions/checkout@v4
 
-      - name: Setup python
-        run: python3 -m pip install pefile --quiet
+      - name: Install pefile
+        run: |
+          python3 -m pip install pefile 2>&1 | tee -a debug.log || pip3 install --break-system-packages pefile 2>&1 | tee -a debug.log
+          python3 -c "import pefile; print('pefile OK', pefile.__version__)" 2>&1 | tee -a debug.log
 
       - name: Static unpack of BLKVMC01 container
         run: |
-          python3 poc/extract.py BLKernel.exe .
-          ls -la vm_bytecode.bin vm_data.bin
+          set -x
+          cd "$GITHUB_WORKSPACE"
+          python3 poc/extract.py BLKernel.exe . 2>&1 | tee -a debug.log
+          ls -la vm_bytecode.bin vm_data.bin 2>&1 | tee -a debug.log
 
       - name: Compile keygen stage 1
-        run: gcc -O3 -march=native -funroll-loops -o keygen1 poc/keygen_stage1.c
-
-      - name: Recover r8_true from known plaintext (~50s)
         run: |
-          ./keygen1 vm_data.bin 2>&1 | tee stage1.log
-          R8=$(grep -oE 'FOUND r8 = 0x[0-9a-f]+' stage1.log | grep -oE '0x[0-9a-f]+')
-          echo "r8_true=$R8" | tee r8.env
-          test -n "$R8" || { echo "::error::r8 not recovered"; exit 1; }
-          test -f blob_plain.bin && echo "[+] plaintext blob recovered"
+          set -x
+          gcc -O3 -funroll-loops -o keygen1 poc/keygen_stage1.c 2>&1 | tee -a debug.log
 
-      - name: Upload artifacts
+      - name: Recover r8_true from known plaintext
+        run: |
+          set -x
+          cd "$GITHUB_WORKSPACE"
+          ./keygen1 vm_data.bin > stage1.out 2> stage1.err || true
+          cat stage1.out stage1.err | tee -a debug.log
+          R8=$(grep -oE 'FOUND r8 = 0x[0-9a-f]+' stage1.out | grep -oE '0x[0-9a-f]+' | head -1)
+          echo "R8=$R8" | tee -a debug.log
+          echo "r8_true=$R8" | tee r8.env
+          cp blob_plain.bin blob-copy.bin 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: r8-and-plaintext
+          name: stage1-debug
           path: |
+            debug.log
             r8.env
-            stage1.log
+            stage1.out
+            stage1.err
             blob_plain.bin
-          if-no-files-found: error
+            vm_bytecode.bin
+            vm_data.bin
+          if-no-files-found: ignore
 
   dynamic-validation:
     name: "Stage 2: real binary validation (Windows)"
@@ -48,38 +68,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download r8
+      - name: Install pefile
+        run: python -m pip install pefile
+        continue-on-error: true
+
+      - name: Download stage1 artifacts
         uses: actions/download-artifact@v4
         with:
-          name: r8-and-plaintext
-
-      - name: Install pefile
-        run: python -m pip install pefile --quiet
+          name: stage1-debug
 
       - name: Static unpack (BLKVMC01) into cwd
         shell: pwsh
-        run: python poc/extract.py BLKernel.exe .
+        run: python poc/extract.py BLKernel.exe . 2>&1 | Tee-Object debug-win.log
 
       - name: Emulator verdict (ground truth, deterministic)
         shell: pwsh
         run: |
-          $r8 = ((Get-Content r8.env | Select-String 'r8_true=').Line -split '=')[1]
+          $r8 = ((Get-Content r8.env | Where-Object { $_ -match 'r8_true=' }) -split '=')[1]
           Write-Host "r8_true = $r8"
-          python poc/keygen_stage2.py ChapzoMods $r8 *>> emu-verdict.log
+          python poc/keygen_stage2.py ChapzoMods $r8 2>&1 | Tee-Object emu-verdict.log
           if (!(Select-String -Path emu-verdict.log -Pattern 'exit byte = 0' -Quiet)) {
             Write-Host "::error::emulator verdict FAILED"
-            Get-Content emu-verdict.log
             exit 1
           }
-          Write-Host "::notice::EMULATOR VERDICT: serial accepted, exit byte 0"
+          Write-Host "::notice::EMULATOR VERDICT: forged serial accepted (exit byte 0)"
 
-      - name: Forge serial and run REAL binary with --check
+      - name: Run REAL binary with forged serial
         id: realrun
         continue-on-error: true
         shell: pwsh
         timeoutMinutes: 5
         run: |
-          $r8 = ((Get-Content r8.env | Select-String 'r8_true=').Line -split '=')[1]
+          $r8 = ((Get-Content r8.env | Where-Object { $_ -match 'r8_true=' }) -split '=')[1]
           $user = "ChapzoMods"
           $serial = ((python poc/keygen_stage2.py $user $r8 | Select-String 'serial : ').Line -split ':',2)[1].Trim()
           Write-Host "user   = $user"
@@ -87,22 +107,22 @@ jobs:
           $out = cmd /c ".\BLKernel.exe --check $user $serial 2>&1" | Out-String
           $code = $LASTEXITCODE
           Write-Host "REAL binary exit code = $code"
-          Write-Host "----- real binary output -----"
           Write-Host $out
-          "REAL_EXIT=$code"    | Out-File -FilePath poc-evidence.txt -Append
-          $out | Out-File -FilePath poc-evidence.txt -Append
+          "REAL_EXIT=$code"  | Out-File poc-evidence.txt -Append
+          $out              | Out-File poc-evidence.txt -Append
           if ($out -match 'ACCESS GRANTED') {
-            Write-Host "::notice::DYNAMIC POC PASSED - real Windows binary accepted forged serial (exit $code)"
+            Write-Host "::notice::DYNAMIC POC PASSED - real binary accepted forged serial"
           } else {
-            Write-Host "::notice::real binary did not print ACCESS GRANTED (runner env counters may differ - emulator verdict is ground truth)"
+            Write-Host "::notice::real binary output without ACCESS GRANTED (env counters may differ; emulator is ground truth)"
           }
 
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: blkernel-re-evidence
+          name: stage2-evidence
           path: |
             emu-verdict.log
             poc-evidence.txt
+            debug-win.log
           if-no-files-found: ignore
