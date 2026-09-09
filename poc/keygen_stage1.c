@@ -46,8 +46,9 @@ static inline int ascii_ok(uint64_t w) {
 }
 
 int main(int argc, char **argv) {
-    FILE *f = fopen("/home/z/my-project/re_workspace/vm_data.bin", "rb");
-    if (!f) { perror("data"); return 1; }
+    const char *datapath = argc > 1 ? argv[1] : "vm_data.bin";
+    FILE *f = fopen(datapath, "rb");
+    if (!f) { perror("data (run extract.py first)"); return 1; }
     uint8_t *data = malloc(0x150e);
     fread(data, 1, 0x150e, f); fclose(f);
     uint64_t *ct = (uint64_t *)(data + 0x1000);   // 64 words ciphertext
@@ -96,7 +97,7 @@ int main(int argc, char **argv) {
                     uint64_t w = ct[i] ^ ks;
                     memcpy(msg + 8*i, &w, 8);
                 }
-                FILE *g = fopen("/home/z/my-project/re_workspace/blob_plain.bin", "wb");
+                FILE *g = fopen("blob_plain.bin", "wb");
                 fwrite(msg, 1, 512, g); fclose(g);
                 fprintf(stderr, "[+] plaintext saved to blob_plain.bin\n");
                 fprintf(stderr, "msg: ");

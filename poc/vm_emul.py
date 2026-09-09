@@ -330,7 +330,7 @@ class VM:
 
 # class table: reconstruct from binary
 import pefile
-pe = pefile.PE("../BLKernel.exe")
+pe = pefile.PE("BLKernel.exe")
 BASE = pe.OPTIONAL_HEADER.ImageBase
 mem_img = pe.get_memory_mapped_image()
 CLS_TBL = list(mem_img[0x14001a690-BASE:0x14001a690-BASE+0x9e])
@@ -338,7 +338,7 @@ CLS_TBL = list(mem_img[0x14001a690-BASE:0x14001a690-BASE+0x9e])
 def run_crackme(user, serial, verbose=False):
     bc = open("vm_bytecode.bin", "rb").read()
     data = open("vm_data.bin", "rb").read()
-    raw = open("../BLKernel.exe", "rb").read()
+    raw = open("BLKernel.exe", "rb").read()
     disk_crc = None
     for s in pe.sections:
         if s.Name.rstrip(b"\x00") == b".text":
