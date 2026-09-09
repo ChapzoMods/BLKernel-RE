@@ -97,7 +97,7 @@ jobs:
         id: realrun
         continue-on-error: true
         shell: pwsh
-        timeoutMinutes: 5
+        timeout-minutes: 5
         run: |
           $r8 = ((Get-Content r8.env | Where-Object { $_ -match 'r8_true=' }) -split '=')[1]
           $user = "ChapzoMods"
