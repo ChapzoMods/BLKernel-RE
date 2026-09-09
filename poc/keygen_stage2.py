@@ -124,5 +124,6 @@ if __name__ == "__main__":
     print(f"[emulator] exit byte = {code} -> process exit code {2 if code else 0}")
     for o in vm.out:
         printable = o.decode(errors="replace")
+        printable = printable.encode(sys.stdout.encoding or "ascii", errors="replace").decode(sys.stdout.encoding or "ascii", errors="replace")
         print("[emulator] output:")
         print(printable)
