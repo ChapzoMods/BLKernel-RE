@@ -94,7 +94,18 @@ anti-analysis coverage. Respect.
 FLAG: BLK{9f14c2a7e5b03d687aa1f4e92c5b8d67}
 ```
 
-## 6. Reproduce
+## 6. Reproduce — CI VALIDATED ✅
+
+The GitHub Action `.github/workflows/dynamic-poc.yml` ran successfully on a real
+`windows-latest` runner with the shipped binary:
+
+```
+Stage 1 (Linux):  r8_true = 0x6b1f2a9d3c7e45b8  (recovered in ~50s, unique solution)
+Stage 2 (Windows): REAL_EXIT=0
+                   BLKernel - ACCESS GRANTED
+                   FLAG: BLK{9f14c2a7e5b03d687aa1f4e92c5b8d67}
+```
+Artifacts `stage1-debug` / `stage2-evidence` contain the full logs and the decrypted blob.
 
 - **Static (any OS):** `pip install pefile` → `python poc/extract.py BLKernel.exe out && python poc/keygen_stage2.py <user>`
 - **Full CI validation on real Windows:** GitHub Action `.github/workflows/dynamic-poc.yml` — recovers `r8_true`, forges a serial, runs the **real binary** with `--check` and asserts `exit code 0` + `ACCESS GRANTED`.
