@@ -4,8 +4,8 @@
    P -> r8 is a bijection for fixed (H,K). With r8_true recovered
    from the blob (stage 1), P = verifier^-1(H,K,r8_true) yields a
    valid serial for any username chosen by the attacker."""
-import struct, sys
-sys.path.insert(0, ".")
+import struct, sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vm_emul import splitmix, inv_splitmix, rol, gen_sbox, run_crackme, M64, GOLDEN
 
 SBOX, SBOX_INV = gen_sbox()

@@ -1,0 +1,22 @@
+[*] scanning 2^32 candidates for word0...
+  progress: 0/2^32
+[+] plaintext saved to blob_plain.bin
+msg: BLK!....==================================================. BLKernel - ACCESS GRANTED.==========
+  progress: 268435456/2^32
+  progress: 536870912/2^32
+  progress: 805306368/2^32
+  progress: 1073741824/2^32
+  progress: 1342177280/2^32
+  progress: 1610612736/2^32
+  progress: 1879048192/2^32
+  progress: 2147483648/2^32
+  progress: 2415919104/2^32
+  progress: 2684354560/2^32
+  progress: 2952790016/2^32
+  progress: 3221225472/2^32
+  progress: 3489660928/2^32
+  progress: 3758096384/2^32
+  progress: 4026531840/2^32
+[*] done, 1 solutions
+FOUND r8 = 0x6b1f2a9d3c7e45b8
+pt0 = 0x00000001214b4c42
